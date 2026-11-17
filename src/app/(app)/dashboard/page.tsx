@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { listOwnLetters } from "@/app/actions/letters";
+import { getAdminUser } from "@/lib/auth/admin";
 import { getSessionUser } from "@/lib/auth/session";
 import { BrandMark } from "@/components/brand-mark";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -27,6 +28,32 @@ export default function DashboardPage() {
   return (
     <LocaleGate fallback={<DashboardFallback />}>
       {({ locale, dictionary }) => (
+        <DashboardShell locale={locale} dictionary={dictionary} />
+      )}
+    </LocaleGate>
+  );
+}
+
+async function DashboardShell({
+  locale,
+  dictionary,
+}: {
+  locale: Locale;
+  dictionary: {
+    brand: string;
+    brandLatin: string;
+    theme: string;
+    themeDark: string;
+    themeLight: string;
+    language: string;
+    ctaWrite: string;
+    dashboardTitle: string;
+    dashboardEmpty: string;
+  };
+}) {
+  const admin = await getAdminUser();
+
+  return (
         <div className="relative min-h-full">
           <div className="atmosphere pointer-events-none absolute inset-0" />
           <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-8">
@@ -43,6 +70,14 @@ export default function DashboardPage() {
                 lightLabel={dictionary.themeLight}
               />
               <LanguageSwitcher locale={locale} label={dictionary.language} />
+              {admin ? (
+                <Link
+                  href="/admin/reports"
+                  className="btn btn-ghost hidden min-h-10 px-3 sm:inline-flex"
+                >
+                  {locale === "bn" ? "রিপোর্ট" : "Reports"}
+                </Link>
+              ) : null}
               <Link href="/letters/new" className="btn btn-primary min-h-10 px-4 py-2">
                 {dictionary.ctaWrite}
               </Link>
@@ -68,8 +103,6 @@ export default function DashboardPage() {
             </Suspense>
           </main>
         </div>
-      )}
-    </LocaleGate>
   );
 }
 

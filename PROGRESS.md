@@ -10,7 +10,7 @@ Track what’s done vs pending. Update after each phase slice.
 | 1 | Foundation (app shell, i18n, schema, auth stubs, landing) | Done |
 | 2 | Core letter workflow | Done (E2E + autosave/revoke/received) |
 | 3 | Sharing (cards, Web Share, FB fallback) | Done (themes + cloud save) |
-| 4 | Reliability (jobs, notifications, abuse) | In progress — report/jobs/rate limits |
+| 4 | Reliability (jobs, notifications, abuse, admin, monitoring) | Done |
 | 5 | V1 expansion (after validation) | Deferred |
 
 ---
@@ -76,7 +76,6 @@ Track what’s done vs pending. Update after each phase slice.
 
 - Signup via UI can hit Supabase email rate limits / reject `@example.com`
 - Auth FormData bug fixed (read form before await)
-- Hydration warnings still appear in some LocaleGate/BrandMark trees (non-blocking)
 
 ---
 
@@ -91,16 +90,23 @@ Track what’s done vs pending. Update after each phase slice.
 
 ---
 
-## Phase 4 — reliability (in progress)
+## Phase 4 — reliability
 
-- [x] Notification job enqueue on schedule/send
-- [x] `/api/jobs/notifications` worker (CRON_SECRET) — stub without email provider
-- [x] Report letter UI on open/reveal (signed-in)
+- [x] Notification job enqueue on schedule/send (invite URL in job payload)
+- [x] `/api/jobs/notifications` worker (CRON_SECRET / Vercel cron)
+- [x] Resend email provider wiring (`EMAIL_PROVIDER_API_KEY` + `EMAIL_FROM`)
+- [x] Report letter UI on open/reveal
 - [x] Block user action
 - [x] Soft rate limits (send / report / share-card)
-- [ ] Real email provider wiring
-- [ ] Admin report review UI
-- [ ] Monitoring hooks
+- [x] Admin report review UI (`/admin/reports`, `ADMIN_EMAILS`)
+- [x] Monitoring hooks (scrubbed events + optional `MONITORING_WEBHOOK_URL`)
+- [x] Migration `20260326123000_phase4_admin_notifications.sql`
+
+**Ops checklist (you)**
+
+- [ ] Apply Phase 4 SQL migration in Supabase
+- [ ] Set `EMAIL_PROVIDER_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAILS`, `CRON_SECRET`
+- [ ] Optional: `MONITORING_WEBHOOK_URL` for errors/analytics
 
 ---
 
@@ -117,4 +123,7 @@ Note Jar, Memory Box, Future Letters, group letters, payments, AI — after MVP 
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only admin/jobs (never expose to client) |
-| Email provider (later) | Transactional delivery notifications |
+| `CRON_SECRET` | Protects notification worker |
+| `EMAIL_PROVIDER_API_KEY` / `EMAIL_FROM` | Resend transactional email |
+| `ADMIN_EMAILS` | Allowlist for `/admin/reports` |
+| `MONITORING_WEBHOOK_URL` | Optional scrubbed analytics/errors |

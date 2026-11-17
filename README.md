@@ -25,13 +25,16 @@ npm install
 cp .env.example .env.local
 ```
 
-3. Create a Supabase project, then run the SQL in:
+3. Create a Supabase project, then run **all** SQL files in `supabase/migrations/`
+   (via Supabase SQL editor or CLI), including Phase 4:
 
-`supabase/migrations/20260326120000_initial_schema.sql`
+`supabase/migrations/20260326123000_phase4_admin_notifications.sql`
 
-(via Supabase SQL editor or CLI)
+4. Optional Phase 4 env: `EMAIL_PROVIDER_API_KEY` + `EMAIL_FROM` (Resend),
+   `ADMIN_EMAILS` (comma-separated) for `/admin/reports`, `CRON_SECRET` for the
+   jobs worker, and `MONITORING_WEBHOOK_URL` for scrubbed analytics.
 
-4. Start the app:
+5. Start the app:
 
 ```bash
 npm run dev
@@ -52,7 +55,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Tracked in [`PROGRESS.md`](./PROGRESS.md).
 
-**Current focus:** Phase 1 foundation → then Phase 2 letter workflow.
+**Current focus:** Phase 4 complete — configure Resend + `ADMIN_EMAILS` + apply latest migration. Phase 5 deferred.
 
 ## Project Cursor skills
 

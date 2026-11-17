@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { assertRateLimit } from "@/lib/abuse/rate-limit";
 import { requireUser } from "@/lib/auth/session";
 import { enqueueLetterAvailableJob } from "@/lib/jobs/notifications";
+import { trackEvent } from "@/lib/monitoring/events";
 import { computeOpening } from "@/lib/letters/opening";
 import {
   draftLetterSchema,
@@ -186,6 +187,11 @@ export async function scheduleOrSendLetter(
       metadata: { opening_rule: opening.openingRule },
     });
 
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+      "http://localhost:3000";
+    const inviteUrl = `${appUrl}/open/${rawToken}`;
+
     if (opening.opensAt && isAdminConfigured()) {
       try {
         await enqueueLetterAvailableJob({
@@ -193,16 +199,18 @@ export async function scheduleOrSendLetter(
           recipientId: null,
           scheduledFor: opening.opensAt,
           actorId: user.id,
+          inviteUrl,
+          recipientName: parsed.recipientName ?? null,
         });
       } catch {
         // Non-fatal: invite still works; jobs can be retried by cron.
       }
     }
 
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-      "http://localhost:3000";
-    const inviteUrl = `${appUrl}/open/${rawToken}`;
+    trackEvent("letter_sent", {
+      openingRule: opening.openingRule,
+      status: opening.status,
+    });
 
     revalidatePath("/dashboard");
     revalidatePath(`/letters/${id}/edit`);

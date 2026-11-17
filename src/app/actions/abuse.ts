@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { assertRateLimit } from "@/lib/abuse/rate-limit";
 import { requireUser } from "@/lib/auth/session";
+import { trackEvent } from "@/lib/monitoring/events";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export type ActionResult<T = undefined> =
@@ -50,6 +51,7 @@ export async function reportLetter(args: {
     });
 
     if (error) return { ok: false, error: error.message };
+    trackEvent("report_submitted", { letterId: args.letterId });
     return { ok: true, data: undefined };
   } catch (err) {
     return {
@@ -110,6 +112,7 @@ export async function reportLetterByToken(args: {
       }
       return { ok: false, error: error.message };
     }
+    trackEvent("report_submitted", { letterId: args.letterId, via: "token" });
     return { ok: true, data: undefined };
   } catch (err) {
     return {

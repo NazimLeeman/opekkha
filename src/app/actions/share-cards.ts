@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { assertRateLimit } from "@/lib/abuse/rate-limit";
 import { requireUser } from "@/lib/auth/session";
+import { trackEvent } from "@/lib/monitoring/events";
 import { createAdminClient, isAdminConfigured } from "@/lib/supabase/admin";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { getShareTheme, type ShareThemeId } from "@/lib/letters/share-themes";
@@ -86,6 +87,7 @@ export async function persistShareCard(args: {
 
     if (error) return { ok: false, error: error.message };
 
+    trackEvent("share_card_saved", { templateId: args.templateId });
     revalidatePath("/dashboard");
     return {
       ok: true,

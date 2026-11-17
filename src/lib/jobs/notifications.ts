@@ -1,15 +1,26 @@
+import { isEmailConfigured, sendEmail } from "@/lib/email/provider";
+import { letterAvailableEmail } from "@/lib/email/templates";
+import { captureError, trackEvent } from "@/lib/monitoring/events";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type ProcessResult = {
   processed: number;
   sent: number;
   failed: number;
+  skipped: number;
   errors: string[];
+};
+
+type JobPayload = {
+  inviteUrl?: string;
+  locale?: "bn" | "en";
+  recipientName?: string | null;
+  notifyEmail?: string | null;
 };
 
 /**
  * Claim and process pending notification jobs.
- * MVP: no email provider — mark as sent with a stub note, or fail clearly.
+ * Sends email when Resend is configured; never includes letter body.
  */
 export async function processNotificationJobs(
   limit = 20,
@@ -20,6 +31,7 @@ export async function processNotificationJobs(
     processed: 0,
     sent: 0,
     failed: 0,
+    skipped: 0,
     errors: [],
   };
 
@@ -33,6 +45,7 @@ export async function processNotificationJobs(
 
   if (error) {
     result.errors.push(error.message);
+    captureError(error, { area: "notification_jobs_list" });
     return result;
   }
 
@@ -54,7 +67,6 @@ export async function processNotificationJobs(
       continue;
     }
 
-    // Promote scheduled letters that are due (server-side availability).
     if (job.event_type === "letter_available") {
       await admin
         .from("letters")
@@ -64,29 +76,25 @@ export async function processNotificationJobs(
         .lte("opens_at", now);
     }
 
-    const emailConfigured = Boolean(process.env.EMAIL_PROVIDER_API_KEY);
-
-    if (!emailConfigured) {
-      // Honest stub: job acknowledged without sending private content.
-      await admin
-        .from("notification_jobs")
-        .update({
-          status: "sent",
-          last_error: "Email provider not configured — job acknowledged (stub).",
-        })
-        .eq("id", job.id);
-      result.sent += 1;
-      continue;
-    }
-
-    // Provider hook placeholder — never put letter body in email.
     try {
-      // await sendEmail(...subject without body...)
-      await admin
-        .from("notification_jobs")
-        .update({ status: "sent", last_error: null })
-        .eq("id", job.id);
-      result.sent += 1;
+      const outcome = await deliverJob(admin, job);
+      if (outcome === "sent") {
+        await admin
+          .from("notification_jobs")
+          .update({ status: "sent", last_error: null })
+          .eq("id", job.id);
+        result.sent += 1;
+      } else if (outcome === "skipped") {
+        await admin
+          .from("notification_jobs")
+          .update({
+            status: "sent",
+            last_error: "Skipped — no recipient email or provider not configured",
+          })
+          .eq("id", job.id);
+        result.skipped += 1;
+        result.sent += 1;
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "send failed";
       await admin
@@ -95,10 +103,81 @@ export async function processNotificationJobs(
         .eq("id", job.id);
       result.failed += 1;
       result.errors.push(message);
+      captureError(err, { area: "notification_job", jobId: job.id });
     }
   }
 
+  trackEvent("job_processed", {
+    processed: result.processed,
+    sent: result.sent,
+    failed: result.failed,
+    skipped: result.skipped,
+  });
+
   return result;
+}
+
+async function deliverJob(
+  admin: ReturnType<typeof createAdminClient>,
+  job: {
+    id: string;
+    letter_id: string;
+    recipient_id: string | null;
+    event_type: string;
+    idempotency_key: string;
+    payload?: JobPayload | null;
+  },
+): Promise<"sent" | "skipped"> {
+  if (job.event_type !== "letter_available") {
+    return "skipped";
+  }
+
+  const payload = (job.payload ?? {}) as JobPayload;
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    "http://localhost:3000";
+
+  let to = payload.notifyEmail?.trim() || null;
+
+  if (!to && job.recipient_id) {
+    const { data } = await admin.auth.admin.getUserById(job.recipient_id);
+    to = data.user?.email ?? null;
+  }
+
+  if (!to) {
+    return "skipped";
+  }
+
+  if (!isEmailConfigured()) {
+    return "skipped";
+  }
+
+  const locale = payload.locale === "en" ? "en" : "bn";
+  const template = letterAvailableEmail({
+    locale,
+    appUrl,
+    openUrl: payload.inviteUrl || null,
+    recipientName: payload.recipientName ?? null,
+  });
+
+  const sent = await sendEmail({
+    to,
+    subject: template.subject,
+    text: template.text,
+    html: template.html,
+    idempotencyKey: job.idempotency_key,
+    tags: [
+      { name: "event", value: "letter_available" },
+      { name: "locale", value: locale },
+    ],
+  });
+
+  if (!sent.ok) {
+    if (sent.skipped) return "skipped";
+    throw new Error(sent.error);
+  }
+
+  return "sent";
 }
 
 export async function enqueueLetterAvailableJob(args: {
@@ -106,9 +185,20 @@ export async function enqueueLetterAvailableJob(args: {
   recipientId: string | null;
   scheduledFor: string;
   actorId: string;
+  inviteUrl?: string | null;
+  locale?: "bn" | "en";
+  recipientName?: string | null;
+  notifyEmail?: string | null;
 }) {
   const admin = createAdminClient();
   const idempotencyKey = `letter_available:${args.letterId}:${args.scheduledFor}`;
+
+  const payload: JobPayload = {
+    inviteUrl: args.inviteUrl || undefined,
+    locale: args.locale || "bn",
+    recipientName: args.recipientName ?? null,
+    notifyEmail: args.notifyEmail ?? null,
+  };
 
   await admin.from("notification_jobs").upsert(
     {
@@ -119,6 +209,7 @@ export async function enqueueLetterAvailableJob(args: {
       scheduled_for: args.scheduledFor,
       status: "pending",
       idempotency_key: idempotencyKey,
+      payload,
     },
     { onConflict: "idempotency_key", ignoreDuplicates: true },
   );

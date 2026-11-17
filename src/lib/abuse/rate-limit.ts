@@ -1,3 +1,4 @@
+import { trackEvent } from "@/lib/monitoring/events";
 import { createClient } from "@/lib/supabase/server";
 
 /** Soft rate limits for abuse-sensitive actions (MVP, DB-backed). */
@@ -20,6 +21,7 @@ export async function assertRateLimit(args: {
       .gte("created_at", since);
     if (error) return { ok: false, error: error.message };
     if ((count ?? 0) >= args.limit) {
+      trackEvent("rate_limit_hit", { action: args.action });
       return {
         ok: false,
         error: "Too many reports. Please try again later.",
@@ -36,6 +38,7 @@ export async function assertRateLimit(args: {
       .gte("created_at", since);
     if (error) return { ok: false, error: error.message };
     if ((count ?? 0) >= args.limit) {
+      trackEvent("rate_limit_hit", { action: args.action });
       return {
         ok: false,
         error: "Share card limit reached. Please try again later.",
@@ -52,6 +55,7 @@ export async function assertRateLimit(args: {
     .gte("created_at", since);
   if (error) return { ok: false, error: error.message };
   if ((count ?? 0) >= args.limit) {
+    trackEvent("rate_limit_hit", { action: args.action });
     return {
       ok: false,
       error: "Send limit reached. Please try again later.",

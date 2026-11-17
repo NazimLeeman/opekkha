@@ -5,6 +5,7 @@ import {
   type EnvelopeView,
 } from "@/lib/letters/opening";
 import { hashAccessToken } from "@/lib/letters/tokens";
+import { trackEvent } from "@/lib/monitoring/events";
 import {
   createAdminClient,
   isAdminConfigured,
@@ -160,6 +161,8 @@ export async function revealLetter(
         event_type: "opened",
         metadata: {},
       });
+
+      trackEvent("letter_revealed", { firstOpen: true });
     }
 
     return {

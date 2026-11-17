@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { processNotificationJobs } from "@/lib/jobs/notifications";
+import { captureError } from "@/lib/monitoring/events";
 import { isAdminConfigured } from "@/lib/supabase/admin";
 
 /**
@@ -16,7 +17,13 @@ export async function POST(request: Request) {
   }
 
   const auth = request.headers.get("authorization") || "";
-  if (auth !== `Bearer ${secret}`) {
+  const cronHeader = request.headers.get("x-cron-secret") || "";
+  const vercelCron = request.headers.get("x-vercel-cron") === "1";
+  const authorized =
+    auth === `Bearer ${secret}` ||
+    cronHeader === secret ||
+    (vercelCron && Boolean(secret));
+  if (!authorized) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -27,8 +34,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await processNotificationJobs(25);
-  return NextResponse.json({ ok: true, ...result });
+  try {
+    const result = await processNotificationJobs(25);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    captureError(err, { area: "jobs_notifications_route" });
+    return NextResponse.json(
+      { ok: false, error: "Job processing failed" },
+      { status: 500 },
+    );
+  }
 }
 
 export async function GET(request: Request) {
